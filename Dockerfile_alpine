@@ -1,0 +1,66 @@
+FROM alpine:3.15.0
+
+ARG NZBGET_VERSION='21.1'
+
+LABEL maintainer "DI GREGORIO Nicolas <nicolas.digregorio@gmail.com>"
+
+### Environment variables
+ENV LANG='en_US.UTF-8' \
+    LANGUAGE='en_US.UTF-8' \
+    GIT_BRANCH='master' \
+    APPUSER='nzbget' \
+    APPUID='10012' \
+    APPGID='10012' \
+    NZBGET_VERSION="${NZBGET_VERSION}"
+
+# Copy config files
+COPY root/ /
+
+### Install Application
+RUN set -x && \
+    chmod 1777 /tmp && \
+    . /usr/local/bin/docker-entrypoint-functions.sh && \
+    MYUSER=${APPUSER} && \
+    MYUID=${APPUID} && \
+    MYGID=${APPGID} && \
+    ConfigureUser && \
+    apk --no-cache upgrade && \
+    apk add --no-cache --virtual=build-deps \
+      curl \
+    && \
+    apk add --no-cache --virtual=run-deps \
+      bash \
+      ca-certificates \
+      su-exec \
+    && \
+    curl -SsL "https://github.com/nzbget/nzbget/releases/download/v${NZBGET_VERSION}/nzbget-${NZBGET_VERSION}-bin-linux.run" -o /tmp/nzbget.run  && \
+    sh /tmp/nzbget.run --destdir /opt/nzbget && \
+    sed -i \
+      -e 's|DestDir=.*|DestDir=/downloads|' \
+      -e 's|NzbDir=.*|NzbDir=/config/nzb|' \
+      -e 's|ScriptDir=.*|NzbDir=/config/scripts|' \
+      -e 's|InterDir=.*|InterDir=/incomplete-downloads/intermediate|' \
+      -e 's|QueueDir=.*|QueueDir=/incomplete-downloads/queue|' \
+      -e 's|TempDir=.*|TempDir=/incomplete-downloads/tmp|' \
+    /opt/nzbget/nzbget.conf && \
+    mkdir /docker-entrypoint.d && \
+    chmod +x /usr/local/bin/docker-entrypoint.sh && \
+    ln -snf /usr/local/bin/docker-entrypoint.sh /docker-entrypoint.sh && \
+    apk del --no-cache --purge \
+      build-deps  && \
+    rm -rf /tmp/* \
+           /var/cache/apk/*  \
+           /var/tmp/*
+
+### Volume
+VOLUME ["/downloads","/config","/incomplete-downloads"]
+
+### Expose ports
+EXPOSE 6789
+
+### Running User: not used, managed by docker-entrypoint.sh
+#USER nzbget
+
+### Start nzbget
+ENTRYPOINT ["/docker-entrypoint.sh"]
+CMD ["nzbget"]
